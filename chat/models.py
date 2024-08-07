@@ -15,6 +15,7 @@ class Message(models.Model):
     user = models.ForeignKey(UsersData, on_delete=models.CASCADE)
     content = models.TextField()
     timestamp = models.DateTimeField(auto_now_add=True)
+    read = models.BooleanField(default=False)
     
     def __str__(self):
         return f"{self.room} - {self.user} - {self.content}" 

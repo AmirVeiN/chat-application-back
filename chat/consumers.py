@@ -67,6 +67,7 @@ class ContactsConsumer(AsyncWebsocketConsumer):
                     }
                 )
 
+
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_name = self.scope["url_route"]["kwargs"]["room_name"]
@@ -86,33 +87,65 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        message_content = data["message"]
-        username = data["username"]
+        message_type = data.get("type", None)
 
-        room = await self.get_room(self.room_name)
-        user = await self.get_user(username)
+        if message_type == "message_read":
+            message_id = data["message_id"]
+            await self.message_read({"message_id": message_id})
+        elif message_type == "chat_message":
+            if "message" in data and "username" in data:
+                message_content = data["message"]
+                username = data["username"]
 
-        msg = await self.create_message(room, user, message_content)
+                room = await self.get_room(self.room_name)
+                user = await self.get_user(username)
 
-        await self.update_contacts(room)
+                msg = await self.create_message(room, user, message_content)
 
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                "type": "chat_message",
-                "message": {
-                    "user": user.username,
-                    "content": msg.content,
-                    'timestamp': msg.timestamp.isoformat()
-                },
-            },
-        )
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        "type": "chat_message",
+                        "message": {
+                            "id": msg.id,
+                            "user": user.username,
+                            "content": msg.content,
+                            'timestamp': msg.timestamp.isoformat(),
+                            'read': msg.read
+                        },
+                    },
+                )
+            else:
+                print("Invalid message format:", data)
+        else:
+            print("Unknown message type:", data)
 
     async def chat_message(self, event):
         message = event["message"]
         await self.send(text_data=json.dumps({
             "type": "chat_message",
             "message": message
+        }))
+
+    async def message_read(self, event):
+        message_id = event["message_id"]
+        await self.mark_message_as_read(message_id)
+
+        # اطلاع رسانی به همه کاربران در اتاق
+        room = await self.get_room(self.room_name)
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                "type": "message_read_update",
+                "message_id": message_id
+            },
+        )
+
+    async def message_read_update(self, event):
+        message_id = event["message_id"]
+        await self.send(text_data=json.dumps({
+            "type": "message_read_update",
+            "message_id": message_id
         }))
 
     @sync_to_async
@@ -132,28 +165,15 @@ class ChatConsumer(AsyncWebsocketConsumer):
         room = Room.objects.get(name=room_name)
         messages = Message.objects.filter(room=room).order_by('timestamp')
         return [{
+            'id': message.id,
             'user': message.user.username,
             'content': message.content,
-            'timestamp': message.timestamp.isoformat()
+            'timestamp': message.timestamp.isoformat(),
+            'read': message.read
         } for message in messages]
 
-    async def update_contacts(self, room):
-        participants = await sync_to_async(lambda: list(room.participants.all()))()
-        for participant in participants:
-            contacts = await sync_to_async(self.get_contacts)(participant)
-            await self.channel_layer.group_send(
-                f"contacts_group_{participant.username}",
-                {
-                    "type": "update_contacts",
-                    "contacts": contacts
-                }
-            )
-
-    def get_contacts(self, user):
-        rooms = Room.objects.filter(participants=user).distinct()
-        contacts = set()
-        for room in rooms:
-            for participant in room.participants.all():
-                if participant != user:
-                    contacts.add(participant)
-        return [{"pk": contact.pk, "username": contact.username, "online": contact.online} for contact in contacts]
+    @sync_to_async
+    def mark_message_as_read(self, message_id):
+        message = Message.objects.get(id=message_id)
+        message.read = True
+        message.save()
