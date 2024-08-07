@@ -13,12 +13,14 @@ class ContactsConsumer(AsyncWebsocketConsumer):
         if self.user.is_anonymous:
             await self.close()
         else:
+            await self.set_user_online_status(True)
             self.group_name = f"contacts_group_{self.user.username}"
             await self.channel_layer.group_add(
                 self.group_name,
                 self.channel_name
             )
             await self.accept()
+            await self.update_contacts_for_all_users()
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):
@@ -26,6 +28,8 @@ class ContactsConsumer(AsyncWebsocketConsumer):
                 self.group_name,
                 self.channel_name
             )
+            await self.set_user_online_status(False)
+            await self.update_contacts_for_all_users()
 
     async def update_contacts(self, event):
         contacts = event['contacts']
@@ -42,7 +46,26 @@ class ContactsConsumer(AsyncWebsocketConsumer):
             for participant in room.participants.all():
                 if participant != user:
                     contacts.add(participant)
-        return [{"id": contact.id, "username": contact.username} for contact in contacts]
+        return [{"pk": contact.id, "username": contact.username, "online": contact.online} for contact in contacts]
+
+    @sync_to_async
+    def set_user_online_status(self, is_online):
+        self.user.online = is_online
+        self.user.save()
+
+    async def update_contacts_for_all_users(self):
+        rooms = await sync_to_async(lambda: list(Room.objects.filter(participants=self.user).distinct()))()
+        for room in rooms:
+            participants = await sync_to_async(lambda: list(room.participants.all()))()
+            for participant in participants:
+                contacts = await self.get_contacts(participant)
+                await self.channel_layer.group_send(
+                    f"contacts_group_{participant.username}",
+                    {
+                        "type": "update_contacts",
+                        "contacts": contacts
+                    }
+                )
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -133,4 +156,4 @@ class ChatConsumer(AsyncWebsocketConsumer):
             for participant in room.participants.all():
                 if participant != user:
                     contacts.add(participant)
-        return [{"pk": contact.pk, "username": contact.username} for contact in contacts]
+        return [{"pk": contact.pk, "username": contact.username, "online": contact.online} for contact in contacts]

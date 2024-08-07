@@ -34,6 +34,7 @@ class UsersData(AbstractBaseUser, PermissionsMixin):
     created_at = models.DateTimeField(default=timezone.now)
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    online = models.BooleanField(default=False)
 
     objects = CustomUserManager()
 

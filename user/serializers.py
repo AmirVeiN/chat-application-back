@@ -13,6 +13,7 @@ class UserSerializer(serializers.ModelSerializer):
             "role",
             "status",
             "updated_at",
+            "online",
             "created_at",
         ]
 
