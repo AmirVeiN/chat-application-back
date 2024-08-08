@@ -3,9 +3,40 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Room, Message
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
-
+from asgiref.sync import async_to_sync
 User = get_user_model()
 
+class BaseConnection:
+    
+    @staticmethod
+    @sync_to_async
+    def get_contacts(user):
+        rooms = Room.objects.filter(participants=user).distinct()
+        contacts = set()
+        for room in rooms:
+            for participant in room.participants.all():
+                if participant != user:
+                    unread_count = Message.objects.filter(room=room, user=participant, read=False).count()
+                    contacts.add((participant, unread_count))
+        return [
+            {"pk": contact.id, "username": contact.username, "online": contact.online, "unread_count": unread_count}
+            for contact, unread_count in contacts
+        ]
+    
+    @staticmethod
+    async def update_contacts_for_all_users(user, channel_layer):
+        rooms = await sync_to_async(lambda: list(Room.objects.filter(participants=user).distinct()))()
+        for room in rooms:
+            participants = await sync_to_async(lambda: list(room.participants.all()))()
+            for participant in participants:
+                contacts = await BaseConnection.get_contacts(participant)
+                await channel_layer.group_send(
+                    f"contacts_group_{participant.username}",
+                    {
+                        "type": "update_contacts",
+                        "contacts": contacts
+                    }
+                )
 
 class ContactsConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -20,7 +51,7 @@ class ContactsConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
             await self.accept()
-            await self.update_contacts_for_all_users()
+            await BaseConnection.update_contacts_for_all_users(self.user, self.channel_layer)
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):
@@ -29,7 +60,7 @@ class ContactsConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
             await self.set_user_online_status(False)
-            await self.update_contacts_for_all_users()
+            await BaseConnection.update_contacts_for_all_users(self.user, self.channel_layer)
 
     async def update_contacts(self, event):
         contacts = event['contacts']
@@ -39,34 +70,9 @@ class ContactsConsumer(AsyncWebsocketConsumer):
         }))
 
     @sync_to_async
-    def get_contacts(self, user):
-        rooms = Room.objects.filter(participants=user).distinct()
-        contacts = set()
-        for room in rooms:
-            for participant in room.participants.all():
-                if participant != user:
-                    contacts.add(participant)
-        return [{"pk": contact.id, "username": contact.username, "online": contact.online} for contact in contacts]
-
-    @sync_to_async
     def set_user_online_status(self, is_online):
         self.user.online = is_online
         self.user.save()
-
-    async def update_contacts_for_all_users(self):
-        rooms = await sync_to_async(lambda: list(Room.objects.filter(participants=self.user).distinct()))()
-        for room in rooms:
-            participants = await sync_to_async(lambda: list(room.participants.all()))()
-            for participant in participants:
-                contacts = await self.get_contacts(participant)
-                await self.channel_layer.group_send(
-                    f"contacts_group_{participant.username}",
-                    {
-                        "type": "update_contacts",
-                        "contacts": contacts
-                    }
-                )
-
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -83,7 +89,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
+        if hasattr(self, 'room_group_name'):
+            await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -101,7 +108,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 user = await self.get_user(username)
 
                 msg = await self.create_message(room, user, message_content)
-
+                
+                await self.update_contacts(room)
+                
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
@@ -122,16 +131,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def chat_message(self, event):
         message = event["message"]
+        userId = await sync_to_async(User.objects.get)(username=message['user'])
+        class self2:
+            user = userId
+        
         await self.send(text_data=json.dumps({
             "type": "chat_message",
             "message": message
         }))
+        await BaseConnection.update_contacts_for_all_users(self2.user, self.channel_layer)
 
     async def message_read(self, event):
         message_id = event["message_id"]
         await self.mark_message_as_read(message_id)
-
-        # اطلاع رسانی به همه کاربران در اتاق
+            
         room = await self.get_room(self.room_name)
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -172,8 +185,31 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'read': message.read
         } for message in messages]
 
-    @sync_to_async
-    def mark_message_as_read(self, message_id):
-        message = Message.objects.get(id=message_id)
+    async def mark_message_as_read(self, message_id):
+        message = await sync_to_async(Message.objects.get)(id=message_id)
         message.read = True
-        message.save()
+        await sync_to_async(message.save)()
+
+        room = await sync_to_async(lambda: message.room)()
+        participants = await sync_to_async(lambda: list(room.participants.all()))()
+        for participant in participants:
+            contacts = await BaseConnection.get_contacts(participant)
+            await self.channel_layer.group_send(
+                f"contacts_group_{participant.username}",
+                {
+                    "type": "update_contacts",
+                    "contacts": contacts
+                }
+            )
+
+    async def update_contacts(self, room):
+        participants = await sync_to_async(lambda: list(room.participants.all()))()
+        for participant in participants:
+            contacts = await BaseConnection.get_contacts(participant)
+            await self.channel_layer.group_send(
+                f"contacts_group_{participant.username}",
+                {
+                    "type": "update_contacts",
+                    "contacts": contacts
+                }
+            )
