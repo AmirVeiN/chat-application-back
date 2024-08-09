@@ -3,12 +3,16 @@ from rest_framework.response import Response
 from rest_framework import status
 from user.models import UsersData
 from user.serializers import UserSerializer
-from .models import Room, Message
-from .serializers import RoomSerializer
+from .models import Room, Message,UploadedFile
+from .serializers import RoomSerializer,UploadedFileSerializer
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from rest_framework.permissions import IsAuthenticated
 
 class CreateOrJoinRoomView(APIView):
+    
+    permission_classes = [IsAuthenticated]
+    
     def post(self, request, *args, **kwargs):
         username = request.data.get('username')
 
@@ -43,6 +47,9 @@ class CreateOrJoinRoomView(APIView):
         return Message.objects.filter(room=room).exists()
 
 class GetContactsView(APIView):
+    
+    permission_classes = [IsAuthenticated]
+    
     def get(self, request):
         rooms = Room.objects.filter(participants=request.user).distinct()
         contacts = set()
@@ -54,3 +61,14 @@ class GetContactsView(APIView):
 
         serializer = UserSerializer(list(contacts), many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class FileUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, format=None):
+        serializer = UploadedFileSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

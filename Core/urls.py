@@ -8,4 +8,4 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/users/", include("user.urls")),
     path("api/v1/chat/", include("chat.urls")),
-] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT) + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -20,3 +20,10 @@ class Message(models.Model):
     def __str__(self):
         return f"{self.room} - {self.user} - {self.content}" 
     
+class UploadedFile(models.Model):
+    user = models.ForeignKey(UsersData, on_delete=models.CASCADE)
+    file = models.FileField(upload_to='uploads/')
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.file.name}"
