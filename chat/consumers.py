@@ -3,7 +3,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Room, Message
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
-from asgiref.sync import async_to_sync
+
 User = get_user_model()
 
 class BaseConnection:
@@ -82,7 +82,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
 
-        messages = await self.get_initial_messages(self.room_name)
+        # ارسال پیام‌های اولیه در بسته‌های 20 تایی
+        messages = await self.get_paginated_messages(self.room_name, 20, 0)
         await self.send(text_data=json.dumps({
             "type": "initial_messages",
             "messages": messages
@@ -126,20 +127,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 )
             else:
                 print("Invalid message format:", data)
+        elif message_type == "load_more_messages":
+            offset = data.get("offset", 0)
+            messages = await self.get_paginated_messages(self.room_name, 20, offset)
+            await self.send(text_data=json.dumps({
+                "type": "more_messages",
+                "messages": messages
+            }))
         else:
             print("Unknown message type:", data)
 
     async def chat_message(self, event):
         message = event["message"]
-        userId = await sync_to_async(User.objects.get)(username=message['user'])
-        class self2:
-            user = userId
-        
         await self.send(text_data=json.dumps({
             "type": "chat_message",
             "message": message
         }))
-        await BaseConnection.update_contacts_for_all_users(self2.user, self.channel_layer)
 
     async def message_read(self, event):
         message_id = event["message_id"]
@@ -174,9 +177,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
         return Message.objects.create(room=room, user=user, content=content)
 
     @sync_to_async
-    def get_initial_messages(self, room_name):
+    def get_paginated_messages(self, room_name, limit, offset):
         room = Room.objects.get(name=room_name)
-        messages = Message.objects.filter(room=room).order_by('timestamp')
+        messages = Message.objects.filter(room=room).order_by('-timestamp')[offset:offset + limit]
         return [{
             'id': message.id,
             'user': message.user.username,
