@@ -3,7 +3,8 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Room, Message
 from asgiref.sync import sync_to_async
 from django.contrib.auth import get_user_model
-
+from channels.db import database_sync_to_async
+from django.db.models import Q
 User = get_user_model()
 
 class BaseConnection:
@@ -52,6 +53,12 @@ class ContactsConsumer(AsyncWebsocketConsumer):
             )
             await self.accept()
             await BaseConnection.update_contacts_for_all_users(self.user, self.channel_layer)
+            if self.user.role == 4:
+                rooms = await self.get_rooms_and_consultants_for_consultant()
+                await self.send(text_data=json.dumps({
+                    'type': 'update_rooms',
+                    'rooms': rooms
+                }))
 
     async def disconnect(self, close_code):
         if hasattr(self, 'group_name'):
@@ -73,6 +80,46 @@ class ContactsConsumer(AsyncWebsocketConsumer):
     def set_user_online_status(self, is_online):
         self.user.online = is_online
         self.user.save()
+    
+    @database_sync_to_async
+    def get_rooms_and_consultants_for_consultant(self):
+        consultant_rooms = Room.objects.filter(
+            Q(participants__in=self.user.consultants.all())
+        ).distinct()
+
+        rooms_data = []
+        for room in consultant_rooms:
+            participants = room.participants.all()
+            participants_data = [
+                {
+                    'id': participant.id,
+                    'username': participant.username,
+                    'fullname': participant.fullname,
+                    'role': participant.role,
+                    'status': participant.status,
+                } for participant in participants
+            ]
+            rooms_data.append({
+                'id': room.id,
+                'name': room.name,
+                'participants': participants_data
+            })
+
+        consultants = self.user.consultants.all()
+        consultants_data = [
+            {
+                'id': consultant.id,
+                'username': consultant.username,
+                'fullname': consultant.fullname,
+                'role': consultant.role,
+                'status': consultant.status,
+            } for consultant in consultants
+        ]
+
+        return {
+            'rooms': rooms_data,
+            'consultants': consultants_data
+        }
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):

@@ -14,25 +14,54 @@ class CreateOrJoinRoomView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request, *args, **kwargs):
+        
         username = request.data.get('username')
-
+        consultant = request.data.get('consultant')
+    
         if not username:
             return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if consultant and request.user.role == 4 :
+            
+            if not consultant:
+                return Response({'error': 'consultant is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            user = UsersData.objects.get(username=username)
-        except UsersData.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            try:
+                user = UsersData.objects.get(username=username)
+            except UsersData.DoesNotExist:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        local_username = request.user.username
-        room_name = "_".join(sorted([local_username, username]))
+            local_username = consultant
+            room_name = "_".join(sorted([local_username, username]))
 
-        room, created = Room.objects.get_or_create(name=room_name)
-        room.participants.add(request.user)
-        room.participants.add(user)
-        room.save()
+            room, created = Room.objects.get_or_create(name=room_name)
+            room.participants.add(request.user)
+            room.participants.add(user)
+            room.save()
 
-        return Response(RoomSerializer(room).data, status=status.HTTP_200_OK)
+            return Response(RoomSerializer(room).data, status=status.HTTP_200_OK)
+            
+        else :
+        
+            username = request.data.get('username')
+
+            if not username:
+                return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+            try:
+                user = UsersData.objects.get(username=username)
+            except UsersData.DoesNotExist:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            local_username = request.user.username
+            room_name = "_".join(sorted([local_username, username]))
+
+            room, created = Room.objects.get_or_create(name=room_name)
+            room.participants.add(request.user)
+            room.participants.add(user)
+            room.save()
+
+            return Response(RoomSerializer(room).data, status=status.HTTP_200_OK)
 
     def get_contacts(self, user):
         rooms = Room.objects.filter(participants=user).distinct()

@@ -14,6 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
             "status",
             "updated_at",
             "online",
+            "consultants",
             "created_at",
         ]
 

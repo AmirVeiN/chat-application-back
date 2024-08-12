@@ -2,6 +2,7 @@ from .constants import USER_TYPE_CHOICES
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.conf import settings
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, username, fullname, role, password=None, **extra_fields):
@@ -35,7 +36,8 @@ class UsersData(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     online = models.BooleanField(default=False)
-
+    consultants = models.ManyToManyField(to=settings.AUTH_USER_MODEL, related_name='consulted_users', null=True, blank=True)
+    
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'username'
