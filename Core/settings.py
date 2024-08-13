@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "user",
     "chat",
     "channels",
+    'daphne',
 ]
 
 MIDDLEWARE = [
@@ -74,6 +75,7 @@ TEMPLATES = [
 ]
 
 ASGI_APPLICATION = "Core.asgi.application"
+WSGI_APPLICATION = "Core.wsgi.application"
 
 CHANNEL_LAYERS = {
     "default": {
