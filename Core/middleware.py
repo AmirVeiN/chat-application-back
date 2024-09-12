@@ -1,3 +1,4 @@
+import requests
 from django.contrib.auth.models import AnonymousUser
 from channels.db import database_sync_to_async
 from rest_framework_simplejwt.tokens import UntypedToken
@@ -25,11 +26,22 @@ class TokenAuthMiddleware:
         token = query_params.get('token', None)
         
         if token:
+            token_str = token[0]
+            if token_str.startswith('Bearer '):
+                token_str = token_str[7:] 
+            
             try:
-                UntypedToken(token[0])
-                decoded_data = UntypedToken(token[0]).payload
-                user_id = decoded_data['user_id']
-                scope['user'] = await get_user(user_id)
+                response = requests.get(
+                    'https://api.evtop.ir/api/app/auth/checkAuth',
+                    headers={'Authorization': f'Bearer {token_str}'}
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    user_id = data['content']['user']['_id']
+                    scope['user'] = await get_user(user_id)
+                else:
+                    scope['user'] = AnonymousUser()
             except (InvalidToken, TokenError) as e:
                 scope['user'] = AnonymousUser()
         else:
