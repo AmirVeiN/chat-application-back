@@ -10,6 +10,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import UsersData
 from .serializers import RegisterSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.permissions import AllowAny
 
 class UserListView(APIView):
 
@@ -20,6 +21,9 @@ class UserListView(APIView):
 
 
 class RegisterView(APIView):
+    
+    permission_classes = [AllowAny]
+    
     def post(self, request, *args, **kwargs):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():

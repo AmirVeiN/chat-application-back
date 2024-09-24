@@ -28,7 +28,7 @@ class CustomUserManager(BaseUserManager):
 
 class UsersData(AbstractBaseUser, PermissionsMixin):
     
-    id = models.CharField(primary_key=True, max_length=50, default=secrets.token_hex(12))
+    id = models.CharField(primary_key=True, max_length=50, unique=True)
     username = models.CharField(max_length=100, unique=True)
     fullname = models.CharField(max_length=100)
     role = models.PositiveSmallIntegerField(choices=USER_TYPE_CHOICES)

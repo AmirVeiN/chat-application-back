@@ -22,13 +22,14 @@ class RegisterSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UsersData
-        fields = ['username', 'fullname', 'role', 'password']
+        fields = ['username', 'fullname', 'role', 'password', "id"]
 
     def create(self, validated_data):
         user = UsersData(
             username=validated_data['username'],
             fullname=validated_data['fullname'],
-            role=validated_data['role']
+            role=validated_data['role'],
+            id=validated_data['id']
         )
         user.set_password(validated_data['password'])
         user.save()
