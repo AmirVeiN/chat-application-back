@@ -22,7 +22,8 @@ class CreateOrJoinRoomView(APIView):
             return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
         
         print(request.user)
-        if consultant and request.user['role'] == 4 :
+        # get from laravel api
+        if consultant and request.user['role'] == 'realEstate' :
             
             if not consultant:
                 return Response({'error': 'consultant is required'}, status=status.HTTP_400_BAD_REQUEST)
