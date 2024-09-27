@@ -21,7 +21,8 @@ class CreateOrJoinRoomView(APIView):
         if not username:
             return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
         
-        if consultant and request.user.role == 4 :
+        print(request.user)
+        if consultant and request.user['role'] == 4 :
             
             if not consultant:
                 return Response({'error': 'consultant is required'}, status=status.HTTP_400_BAD_REQUEST)
